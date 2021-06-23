@@ -12,7 +12,7 @@
         android:layout_height="match_parent"
         android:gravity="center"
         android:textColor="#FFF"
-        android:text="牛盾管家"
+        android:text="正在获取微信昵称"
         android:background="#444"/>
 
 

@@ -63,12 +63,9 @@ class AutoReplyService : AccessibilityService() {
                         if (ivHeadNodes.isNotEmpty()) {
                             val wxUser = users.find { it.remarkName == nickOrRemarkName }
                             if (wxUser == null) {
-                                Toast.makeText(this, "牛盾管家关联微信用户名", Toast.LENGTH_SHORT).show()
-
-
+                                Toast.makeText(this, "正在关联微信用户名", Toast.LENGTH_SHORT).show()
 
                                 showPop(ivHeadNodes)
-
 
                                 toConfirmNickName = nickOrRemarkName
                                 users.add(WxUser(nickOrRemarkName, nickOrRemarkName))
@@ -110,6 +107,9 @@ class AutoReplyService : AccessibilityService() {
         }
     }
 
+    /**
+     * 此处需要开启悬浮窗权限
+     */
     private fun showPop(nodes:List<AccessibilityNodeInfo>) {
         val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         val layoutParams = WindowManager.LayoutParams();
