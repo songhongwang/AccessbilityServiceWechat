@@ -1,44 +1,48 @@
 package com.csizg.core
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Notification
 import android.content.Intent
+import android.graphics.PixelFormat
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.view.*
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
 import com.csizg.core.AsCore.BROADCAST_ACTION
-import kotlin.collections.ArrayList
-import kotlin.collections.LinkedHashSet
+
 
 class AutoReplyService : AccessibilityService() {
+    val TAG = AutoReplyService::class.java.simpleName
+
     private var toConfirmNickName: String? = null
     private val users: LinkedHashSet<WxUser> = LinkedHashSet()
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         val eventType = event.eventType
-        Log.d(
-            "maptrix",
-            "get event = " + eventType + "eventclass = " + event.className.toString()
-        )
+        Log.d(TAG, "get event = $eventType event_class = ${event.className}")
         when (eventType) {
             AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED -> {
-                Log.d("maptrix", "get notification event")
-                val texts = event.text
-                if (texts.isNotEmpty()) {
-                    if (event.parcelableData != null
-                        && event.parcelableData is Notification
-                    ) {
+                if (event.text.isNotEmpty()) {
+                    (event.parcelableData as? Notification)?.let {
                         val notification = event.parcelableData as Notification
                         val content = notification.tickerText.toString()
                         val cc = content.split(":".toRegex()).toTypedArray()
+                        if(cc.isEmpty() || cc.size < 2){
+                            return
+                        }
+                        // todo 预留接口 监听通知栏消息
                         val name = cc[0].trim { it <= ' ' }
-                        val scontent = cc[1].trim { it <= ' ' }
-                        Log.i("maptrix", "sender name =$name")
-                        Log.i("maptrix", "sender content =$scontent")
+                        val sContent = cc[1].trim { it <= ' ' }
+                        Log.i(TAG, "sender name =$name $sContent")
                     }
                 }
             }
+
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 val className = event.className.toString()
                 val rootInActiveWindow = rootInActiveWindow
@@ -55,19 +59,23 @@ class AutoReplyService : AccessibilityService() {
                         val nickOrRemarkName = tvNickName.text.toString()
 
                         // 点击好友头像进入用户详情页面获取用户的昵称（不是备注是微信名）
-                        val ivHeadNodes =
-                            rootInActiveWindow.findAccessibilityNodeInfosByViewId("com.tencent.mm:id/au2")
+                        val ivHeadNodes = rootInActiveWindow.findAccessibilityNodeInfosByViewId("com.tencent.mm:id/au2")
                         if (ivHeadNodes.isNotEmpty()) {
                             val wxUser = users.find { it.remarkName == nickOrRemarkName }
                             if (wxUser == null) {
                                 Toast.makeText(this, "牛盾管家关联微信用户名", Toast.LENGTH_SHORT).show()
+
+
+
+                                showPop(ivHeadNodes)
+
+
                                 toConfirmNickName = nickOrRemarkName
                                 users.add(WxUser(nickOrRemarkName, nickOrRemarkName))
                                 toUserDetail(nickOrRemarkName, ivHeadNodes)
                             } else {
                                 toConfirmNickName = null
                                 Toast.makeText(this, wxUser.nickName, Toast.LENGTH_SHORT).show()
-                                Log.d("maptrix", "昵称： " + wxUser.nickName)
                                 users.remove(wxUser)
                                 users.add(wxUser)
                             }
@@ -77,17 +85,14 @@ class AutoReplyService : AccessibilityService() {
                     }
                 }
                 if (className == "com.tencent.mm.plugin.profile.ui.ContactInfoUI") {
-                    val tvNodes =
-                        rootInActiveWindow.findAccessibilityNodeInfosByViewId("com.tencent.mm:id/bd1")
+                    val tvNodes = rootInActiveWindow.findAccessibilityNodeInfosByViewId("com.tencent.mm:id/bd1")
                     var nickText: String? = null
-                    if (!tvNodes.isEmpty()) {
+                    if (tvNodes.isNotEmpty()) {
                         val tvNickName = tvNodes[0]
                         if (isTextView(tvNickName)) {
-                            nickText = tvNickName.text.toString()
-                            if (nickText.contains(":")) { // 文本内容 昵称:  宋红旺
-                                if (nickText.indexOf(":") + 3 < nickText.length) {
-                                    nickText = nickText.substring(nickText.indexOf(":") + 3)
-                                }
+                            val nickArr = tvNickName.text.toString().split(":".toRegex()).toTypedArray()
+                            if(nickArr.size > 1) {
+                                nickText = nickArr[1].trim()
                             }
                         }
                     }
@@ -105,18 +110,38 @@ class AutoReplyService : AccessibilityService() {
         }
     }
 
-    private fun toUserDetail(
-        nickOrRemarkName: String,
-        ivHeadNodes: List<AccessibilityNodeInfo>
-    ) {
+    private fun showPop(nodes:List<AccessibilityNodeInfo>) {
+        val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        val layoutParams = WindowManager.LayoutParams();
+        layoutParams.height = ViewGroup.LayoutParams.MATCH_PARENT
+        layoutParams.width = ViewGroup.LayoutParams.MATCH_PARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            layoutParams.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            layoutParams.type = WindowManager.LayoutParams.TYPE_PHONE;
+        }
+        layoutParams.flags =  WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_FULLSCREEN
+        layoutParams.format = PixelFormat.TRANSLUCENT
+        layoutParams.gravity = Gravity.TOP
+
+        val view = LayoutInflater.from(this).inflate(R.layout.pop_window,null);
+
+        windowManager.addView(view,layoutParams)
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            windowManager.removeView(view)
+        },1000)
+    }
+
+
+    /**
+     * 找到对应的好友并且点击好友的微信头像
+     *
+     */
+    private fun toUserDetail(destName: String, ivHeadNodes: List<AccessibilityNodeInfo>) {
         for (ivHead in ivHeadNodes) {
-            val contentDescription = ivHead.contentDescription ?: continue
-            if (contentDescription.toString().indexOf("头像") > contentDescription.length) {
-                continue
-            }
-            val label = contentDescription.toString()
-                .substring(0, contentDescription.toString().indexOf("头像"))
-            if (nickOrRemarkName == label) {
+            val label = ivHead.contentDescription.replace("头像".toRegex(), "").trim()
+            if (destName == label) {
                 ivHead.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 break
             }
@@ -155,5 +180,15 @@ class AutoReplyService : AccessibilityService() {
 
     private fun isTextView(node: AccessibilityNodeInfo): Boolean {
         return node.className.toString() == "android.widget.TextView"
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        // 代码和xml都需要配置否则不同手机不兼容！！！
+        val info = AccessibilityServiceInfo()
+        info.eventTypes = AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED or  AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+        info.notificationTimeout = 100
+        serviceInfo = info
     }
 }
